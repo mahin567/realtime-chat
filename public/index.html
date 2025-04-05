@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Humanized Chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <h2>Active Users</h2>
+      <ul id="user-list"></ul>
+    </div>
+
+    <!-- Chat Section -->
+    <div id="chat-section">
+      <!-- Chat Header -->
+      <div id="chat-header">
+        <input id="username-input" type="text" placeholder="Enter your name" />
+      </div>
+
+      <!-- Messages -->
+      <div id="messages-container">
+        <ul id="messages"></ul>
+        <p id="typing-indicator"></p>
+      </div>
+
+      <!-- Chat Footer -->
+      <div id="chat-footer">
+        <input id="message-input" type="text" placeholder="Type a message..." />
+        <input id="file-input" type="file" />
+        <button id="send-button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script >
+    const socket = io();
+const usernameInput = document.getElementById("username-input");
+const messageInput = document.getElementById("message-input");
+const messages = document.getElementById("messages");
+const userList = document.getElementById("user-list");
+const fileInput = document.getElementById("file-input");
+const typingIndicator = document.getElementById("typing-indicator");
+
+// Handle username changes
+usernameInput.addEventListener("change", () => {
+  const username = usernameInput.value.trim() || `User_${socket.id}`;
+  socket.emit("update-username", username);
+});
+
+// Typing indicator
+messageInput.addEventListener("input", () => {
+  socket.emit("typing", { isTyping: !!messageInput.value.trim() });
+});
+
+socket.on("typing", ({ user, isTyping }) => {
+  typingIndicator.textContent = isTyping ? `${user.name} is typing...` : "";
+});
+
+// Sending messages
+document.getElementById("send-button").addEventListener("click", () => {
+  const message = messageInput.value.trim();
+  const file = fileInput.files[0];
+
+  if (message) {
+    socket.emit("user-message", { message });
+    messageInput.value = "";
+  }
+
+  if (file) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    fetch("/upload", { method: "POST", body: formData })
+      .then((res) => res.json())
+      .then(({ filePath, fileName, mimeType }) => {
+        const isImage = mimeType.startsWith("image/");
+        socket.emit("user-message", {
+          file: {
+            url: filePath,
+            name: fileName,
+            isImage,
+          },
+        });
+        fileInput.value = "";
+      });
+  }
+});
+
+// Display messages
+socket.on("message", ({ user, message, file }) => {
+  const li = document.createElement("li");
+  li.className = user.id === socket.id ? "sent" : "received";
+  li.innerHTML = `
+    <div><strong>${user.name}</strong> <small>${new Date().toLocaleTimeString()}</small></div>
+    <div>${message || ""}</div>
+    ${
+      file
+        ? file.isImage
+          ? `<div class="file-preview"><img src="${file.url}" alt="${file.name}"></div>`
+          : `<div><a href="${file.url}" target="_blank">${file.name}</a></div>`
+        : ""
+    }
+  `;
+  messages.appendChild(li);
+  messages.scrollTop = messages.scrollHeight;
+});
+
+// User list
+socket.on("user-list", (users) => {
+  userList.innerHTML = users.map((user) => `<li>${user.name}</li>`).join("");
+});
+
+// Notifications
+socket.on("notification", ({ type, user }) => {
+  const notification = type === "connect" ? `${user.name} joined.` : `${user.name} left.`;
+  const li = document.createElement("li");
+  li.className = "notification";
+  li.textContent = notification;
+  messages.appendChild(li);
+  messages.scrollTop = messages.scrollHeight;
+});
+
+  </script>
+</body>
+</html>
